@@ -1,16 +1,53 @@
 import sys
 import numpy as np 
 import random
+
+
+
+class Preprocessing():
+	def __init__(self, train_path, test_path):
+		self.train_path = train_path
+		self.test_path = test_path
+		self.load_data(self.train_path, True)
+		self.load_data(self.test_path, False)
+	def load_data(self, path, is_train):
+		data = np.loadtxt(path)
+		if is_train:
+			self.train_data = data
+			self.attribute_count = data.shape[1] - 1
+			unique = sorted(np.unique(data[: ,[-1]]))
+			self.class_count = len(unique)
+			self.mapping = {}
+			self.idx_mapping = {}
+			for i, x in enumerate(unique):
+				self.mapping[i] = x
+				self.idx_mapping[x] = i
+		else:
+			self.test_data = data
+
 class DecisionForest():
-	def __init__(self, number_of_trees, train_path, test_path, option, pruning_thr):
+	def __init__(self, number_of_trees, option, pruning_thr, data_factory):
+		self.data_factory = data_factory
 		self.number_of_trees = number_of_trees
-		self.trees = [DecisionTree(i, train_path, test_path, option, pruning_thr) for i in range(self.number_of_trees)]
+		self.trees = [DecisionTree(i, option, pruning_thr, data_factory).DTL_TopLevel() for i in range(1,self.number_of_trees+1)]
 	def classify(self, data):
 		forest_distributions = []
 		for x in self.trees:
-			root = x.DTL_TopLevel()
-			dist = root.predict(data)
+			dist = x.predict(data)
 			forest_distributions.append(dist)
+		forest_distributions = np.array(forest_distributions)
+		return self.data_factory.mapping[int(np.argmax(np.mean(forest_distributions, axis = 0)))]
+	def run_predictions(self):
+		count = 0
+		curr = 0
+		for x in self.data_factory.test_data:
+			predicted = self.classify(x[:-1])
+			actual = int(x[-1])
+			accuracy = 0 if predicted != actual else 1
+			curr += accuracy
+			count += 1
+		print(curr/count)
+
 class Tree:
 	def __init__(self, id, tree_gain = None, tree_attribute = None, tree_dist = None, tree_thresh = None, is_leaf = False):
 		self.id = id
@@ -30,28 +67,15 @@ class Tree:
 			else:
 				return self.right.predict(data)
 class DecisionTree:
-	def __init__(self, id_, train_path, test_path, option, pruning_thr):
+	def __init__(self, id_, option, pruning_thr, data_factory):
+		self.data_factory = data_factory
 		self.id = id_
-		self.train_path = train_path
-		self.test_path = test_path
 		self.option = option
 		self.pruning_thr = int(pruning_thr)
-		self.load_data(self.train_path, True)
-		self.load_data(self.test_path, False)
-	def load_data(self, path, is_train):
-		data = np.loadtxt(path)
-		if is_train:
-			self.train_data = data
-			self.attribute_count = data.shape[1] - 1
-			unique = sorted(np.unique(data[: ,[-1]]))
-			self.class_count = len(unique)
-			self.mapping = {}
-			self.idx_mapping = {}
-			for i, x in enumerate(unique):
-				self.mapping[i] = x
-				self.idx_mapping[x] = i
-		else:
-			self.test_data = data
+		self.idx_mapping = data_factory.idx_mapping
+		self.mapping = data_factory.mapping
+		self.attribute_count = data_factory.attribute_count
+		self.class_count = data_factory.class_count
 	def check_if_equal(self, examples):
 		values = examples[: ,[-1]]
 		element = examples[: ,[-1]][0]
@@ -60,14 +84,13 @@ class DecisionTree:
 				return False
 		return True
 	def DTL_TopLevel(self):
-		default = self.distribution(self.train_data)
+		default = self.distribution(self.data_factory.train_data)
 		if self.option == "randomized":
 			choose_attribute = self.choose_random
 		elif self.option == "optimized":
 			choose_attribute = self.choose_optimized
-		return self.DTL(self.train_data, default, choose_attribute)
+		return self.DTL(self.data_factory.train_data, default, choose_attribute)
 	def DTL(self, examples, default, choose_attribute):
-		print(examples.shape)
 		if examples.shape[0] == 0 or examples.shape[0] < self.pruning_thr:
 			return Tree(self.id,is_leaf = True, tree_dist = default)
 		elif self.check_if_equal(examples):
@@ -101,7 +124,6 @@ class DecisionTree:
 					max_attribute = i
 					max_threshold = threshold
 		return max_gain, max_attribute, max_threshold
-	@staticmethod
 	def choose_random(self, examples):
 		max_gain = max_attribute = max_threshold = -1
 		x = random.randint(0, self.attribute_count - 1)
@@ -148,7 +170,7 @@ class DecisionTree:
 	def run_predictions(self, root):
 		total = 0
 		curr = 0
-		for x in self.test_data:
+		for x in self.data_factory.test_data:
 			actual = int(x[-1])
 			dist = root.predict( x[:-1] )
 			predicted = np.argmax(dist)
@@ -160,12 +182,15 @@ class DecisionTree:
 def main():
 	if len(sys.argv) < 5:
 		print("Usage: [path_to_training_file] [path_to_test_file] option pruning_thr")
+	data_factory = Preprocessing(*sys.argv[1:3])
 	if sys.argv[3] == "forest3":
-		forest = DecisionForest(3, *sys.argv[1:5])
+		forest = DecisionForest(3,"randomized",sys.argv[4], data_factory)
+		forest.run_predictions()
 	elif sys.argv[3] == "forest15":
-		forest = DecisionForest(15, *sys.argv[1:5])
+		forest = DecisionForest(15,"randomized",sys.argv[4], data_factory)
+		forest.run_predictions()
 	else:
-		tree = DecisionTree(1,*sys.argv[1:5])
+		tree = DecisionTree(1,*sys.argv[3:5], data_factory)
 		root = tree.DTL_TopLevel()
 		tree.run_predictions(root)
 if __name__ == "__main__":
