@@ -1,3 +1,5 @@
+#Edgar Gonzalez
+#1001336686
 import sys
 import numpy as np 
 import random
