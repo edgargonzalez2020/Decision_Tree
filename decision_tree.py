@@ -38,15 +38,18 @@ class DecisionForest():
 		forest_distributions = np.array(forest_distributions)
 		return self.data_factory.mapping[int(np.argmax(np.mean(forest_distributions, axis = 0)))]
 	def run_predictions(self):
+		object_id = 1
 		count = 0
 		curr = 0
 		for x in self.data_factory.test_data:
-			predicted = self.classify(x[:-1])
+			predicted = int(self.classify(x[:-1]))
 			actual = int(x[-1])
 			accuracy = 0 if predicted != actual else 1
 			curr += accuracy
 			count += 1
-		print(curr/count)
+			print(f"ID={object_id:5d}, predicted={predicted:3d}, true={actual:3d}, accuracy={accuracy:4.2f}")
+			object_id += 1
+		print(f"classification accuracy={curr/count:6.4f}")
 
 class Tree:
 	def __init__(self, id, tree_gain = None, tree_attribute = None, tree_dist = None, tree_thresh = None, is_leaf = False):
@@ -66,6 +69,30 @@ class Tree:
 				return self.left.predict(data)
 			else:
 				return self.right.predict(data)
+	def print(self):
+		queue = []
+		queue.append((self, 1))
+		while queue:
+			count = len(queue)
+			while count > 0:
+				temp = queue.pop(0)
+				if temp[0].is_leaf:
+					feature = -1
+					thr = -1
+					gain = 0
+				else:
+					feature = temp[0].tree_attribute + 1
+					thr = temp[0].tree_thresh
+					gain = temp[0].tree_gain
+				if temp[0].left:
+					queue.append((temp[0].left, 2 * temp[1]))
+				if temp[0].right:
+					queue.append((temp[0].right, 2 * temp[1] + 1))
+				count -= 1
+				print(f"tree={temp[0].id:2d}, node={temp[1]:3d}, feature={feature:2d}, thr={thr:6.2f}, gain={gain}")
+
+
+
 class DecisionTree:
 	def __init__(self, id_, option, pruning_thr, data_factory):
 		self.data_factory = data_factory
@@ -159,7 +186,7 @@ class DecisionTree:
 		for x in examples:
 			label = int(x[-1])
 			count[label] = count.get(label, 1) + 1
-		return sum([ -(part_size / examples.shape[0]) * np.log2(part_size / examples.shape[0]) for part_size in count.values()])
+		return sum([ -( K / examples.shape[0]) * np.log2(K / examples.shape[0]) for K in count.values()])
 	def distribution(self, data):
 		zeros = np.zeros(self.class_count)
 		for x in data:
@@ -168,30 +195,38 @@ class DecisionTree:
 			zeros /= data.shape[0]
 		return zeros
 	def run_predictions(self, root):
+		object_id = int(1)
 		total = 0
 		curr = 0
 		for x in self.data_factory.test_data:
 			actual = int(x[-1])
 			dist = root.predict( x[:-1] )
-			predicted = np.argmax(dist)
-			predicted = self.mapping[int(predicted)]
+			predicted = int(np.argmax(dist))
+			predicted = int(self.mapping[int(predicted)])
 			total += 1
 			accuracy = 0 if actual != predicted else 1
 			curr += accuracy
-		print(curr/total)
+			print(f"ID={object_id:5d}, predicted={predicted:3d}, true={actual:3d}, accuracy={accuracy:4.2f}")
+			object_id += 1
+		print(f"classification accuracy={curr/total:6.4f}")
 def main():
 	if len(sys.argv) < 5:
 		print("Usage: [path_to_training_file] [path_to_test_file] option pruning_thr")
 	data_factory = Preprocessing(*sys.argv[1:3])
 	if sys.argv[3] == "forest3":
 		forest = DecisionForest(3,"randomized",sys.argv[4], data_factory)
+		for x in forest.trees:
+			x.print()
 		forest.run_predictions()
 	elif sys.argv[3] == "forest15":
 		forest = DecisionForest(15,"randomized",sys.argv[4], data_factory)
+		for x in forest.trees:
+			x.print()
 		forest.run_predictions()
 	else:
 		tree = DecisionTree(1,*sys.argv[3:5], data_factory)
 		root = tree.DTL_TopLevel()
+		root.print()
 		tree.run_predictions(root)
 if __name__ == "__main__":
 	main()
